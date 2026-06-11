@@ -25,7 +25,7 @@
     "watch": "tsc --watch",
     "test": "node --import tsx --test src/*.test.ts src/tcl/*.test.ts",
     "probe": "tsx scripts/probe.ts",
-    "prepublishOnly": "npm run build"
+    "prepack": "npm run build"
   },
   "files": [
     "dist",
