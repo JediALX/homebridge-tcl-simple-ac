@@ -1,0 +1,89 @@
+{
+  "pluginAlias": "TclSimpleAC",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Exposes TCL Home split air conditioners (e.g. BreezeIN 2.0) as single Apple-like HeaterCooler accessories. Sign in with the same credentials you use in the TCL Home app — your region is discovered automatically from your account, exactly like the app does.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "TCL Simple AC"
+      },
+      "username": {
+        "title": "TCL Home email",
+        "type": "string",
+        "required": true,
+        "format": "email"
+      },
+      "password": {
+        "title": "TCL Home password",
+        "type": "string",
+        "required": true,
+        "x-schema-form": { "type": "password" }
+      },
+      "pollInterval": {
+        "title": "Poll interval (seconds)",
+        "type": "integer",
+        "default": 15,
+        "minimum": 5,
+        "maximum": 300,
+        "description": "How often to read the AC state from the TCL cloud."
+      },
+      "devices": {
+        "title": "Device allowlist (optional)",
+        "type": "array",
+        "items": { "title": "Device ID", "type": "string" },
+        "description": "Leave empty to expose every split AC on the account. Add TCL device IDs to expose only specific units (IDs are printed in the Homebridge log at startup)."
+      },
+      "minTemp": {
+        "title": "Minimum target temperature (°C)",
+        "type": "integer",
+        "default": 16
+      },
+      "maxTemp": {
+        "title": "Maximum target temperature (°C)",
+        "type": "integer",
+        "default": 31
+      },
+      "loginUrl": {
+        "title": "Login URL override",
+        "type": "string",
+        "placeholder": "https://pa.account.tcl.com/account/login?clientId=54148614"
+      },
+      "cloudUrlsEndpoint": {
+        "title": "Cloud URL discovery endpoint override",
+        "type": "string",
+        "placeholder": "https://prod-center.aws.tcljd.com/v3/global/cloud_url_get"
+      },
+      "appId": {
+        "title": "App ID override",
+        "type": "string",
+        "placeholder": "wx6e1af3fa84fbe523"
+      },
+      "iotEndpoint": {
+        "title": "AWS IoT endpoint override",
+        "type": "string",
+        "description": "Normally auto-discovered. Only set if shadow reads fail."
+      }
+    }
+  },
+  "layout": [
+    "username",
+    "password",
+    "pollInterval",
+    {
+      "type": "fieldset",
+      "title": "Devices",
+      "expandable": true,
+      "items": ["devices", "minTemp", "maxTemp"]
+    },
+    {
+      "type": "fieldset",
+      "title": "Advanced (region/endpoint overrides)",
+      "expandable": true,
+      "items": ["loginUrl", "cloudUrlsEndpoint", "appId", "iotEndpoint"]
+    }
+  ]
+}

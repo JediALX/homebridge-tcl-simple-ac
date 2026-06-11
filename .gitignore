@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.homebridge-dev/
+.env
+probe-output*.json
+*.log
+.DS_Store
