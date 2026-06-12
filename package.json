@@ -1,7 +1,7 @@
 {
   "name": "homebridge-tcl-simple-ac",
   "displayName": "TCL Simple AC",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Homebridge plugin exposing TCL Home split air conditioners (e.g. BreezeIN 2.0) as single, Apple-like HeaterCooler accessories.",
   "license": "MIT",
   "repository": {

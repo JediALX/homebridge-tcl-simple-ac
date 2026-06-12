@@ -31,6 +31,12 @@
         "maximum": 300,
         "description": "How often to read the AC state from the TCL cloud."
       },
+      "enableDehumidifier": {
+        "title": "Expose Dry mode as a separate Dehumidifier accessory",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds a second tile per AC controlling the unit's Dry mode. The humidity reading shown by the Home app is a fixed 50% — TCL split ACs have no humidity sensor."
+      },
       "devices": {
         "title": "Device allowlist (optional)",
         "type": "array",
@@ -73,6 +79,7 @@
     "username",
     "password",
     "pollInterval",
+    "enableDehumidifier",
     {
       "type": "fieldset",
       "title": "Devices",

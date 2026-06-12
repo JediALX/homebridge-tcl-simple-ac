@@ -6,8 +6,12 @@ import {
   fromRotationSpeed,
   fromTargetHeaterCoolerState,
   HK,
+  isDehumidifying,
   parseShadow,
+  toActive,
+  toCurrentDehumidifierState,
   toCurrentHeaterCoolerState,
+  toDehumidifierActive,
   toRotationSpeed,
   toTargetHeaterCoolerState,
   WorkMode,
@@ -132,6 +136,61 @@ describe('target heater-cooler state', () => {
   it('is undefined for Dry/Fan so HomeKit keeps the last value', () => {
     assert.equal(toTargetHeaterCoolerState(parseShadow({ ...baseReported, workMode: WorkMode.DRY })), undefined);
     assert.equal(toTargetHeaterCoolerState(parseShadow({ ...baseReported, workMode: WorkMode.FAN })), undefined);
+  });
+});
+
+describe('dehumidifier mapping', () => {
+  const drying = parseShadow({ ...baseReported, workMode: WorkMode.DRY });
+  const dryingOff = parseShadow({ ...baseReported, workMode: WorkMode.DRY, powerSwitch: 0 });
+
+  it('is active and dehumidifying only when powered on in dry mode', () => {
+    assert.equal(isDehumidifying(drying), true);
+    assert.equal(toDehumidifierActive(drying), HK.Active.ACTIVE);
+    assert.equal(toCurrentDehumidifierState(drying), HK.DehumidifierState.DEHUMIDIFYING);
+
+    assert.equal(isDehumidifying(dryingOff), false);
+    assert.equal(toDehumidifierActive(dryingOff), HK.Active.INACTIVE);
+    assert.equal(toCurrentDehumidifierState(dryingOff), HK.DehumidifierState.INACTIVE);
+
+    const cooling = parseShadow(baseReported);
+    assert.equal(isDehumidifying(cooling), false);
+    assert.equal(toDehumidifierActive(cooling), HK.Active.INACTIVE);
+  });
+
+  it('AC tile reports dry mode as off only with dryAsOff', () => {
+    assert.equal(toActive(drying, true), HK.Active.INACTIVE);
+    assert.equal(toCurrentHeaterCoolerState(drying, true), HK.CurrentState.INACTIVE);
+    // Without the flag, v0.1.0 behavior is unchanged: on and Idle.
+    assert.equal(toActive(drying), HK.Active.ACTIVE);
+    assert.equal(toCurrentHeaterCoolerState(drying), HK.CurrentState.IDLE);
+  });
+
+  it('dryAsOff does not affect other modes', () => {
+    const cooling = parseShadow(baseReported);
+    assert.equal(toActive(cooling, true), HK.Active.ACTIVE);
+    assert.equal(toCurrentHeaterCoolerState(cooling, true), HK.CurrentState.COOLING);
+    const fanOnly = parseShadow({ ...baseReported, workMode: WorkMode.FAN });
+    assert.equal(toActive(fanOnly, true), HK.Active.ACTIVE);
+    assert.equal(toCurrentHeaterCoolerState(fanOnly, true), HK.CurrentState.IDLE);
+  });
+
+  it('handles a real BreezeIN 2.0 shadow switched to dry mode', () => {
+    const state = parseShadow({
+      powerSwitch: 1,
+      targetTemperature: 22,
+      currentTemperature: 23.5,
+      windSpeed7Gear: 0,
+      windSpeedAutoSwitch: 1,
+      verticalWind: 0,
+      horizontalWind: 0,
+      workMode: 2,
+      temperatureType: 0,
+    });
+    assert.equal(isDehumidifying(state), true);
+    assert.equal(toDehumidifierActive(state), HK.Active.ACTIVE);
+    assert.equal(toActive(state, true), HK.Active.INACTIVE);
+    // Dry mode is unrepresentable on the AC tile; HomeKit keeps the last target.
+    assert.equal(toTargetHeaterCoolerState(state), undefined);
   });
 });
 

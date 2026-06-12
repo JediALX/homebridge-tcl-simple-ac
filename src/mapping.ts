@@ -10,7 +10,15 @@ export const HK = {
   TargetState: { AUTO: 0, HEAT: 1, COOL: 2 },
   SwingMode: { DISABLED: 0, ENABLED: 1 },
   Active: { INACTIVE: 0, ACTIVE: 1 },
+  DehumidifierState: { INACTIVE: 0, IDLE: 1, HUMIDIFYING: 2, DEHUMIDIFYING: 3 },
+  DehumidifierTarget: { DEHUMIDIFIER: 2 },
 } as const;
+
+/**
+ * The HumidifierDehumidifier service requires CurrentRelativeHumidity, but
+ * TCL split ACs have no humidity sensor, so we report a neutral constant.
+ */
+export const SYNTHETIC_HUMIDITY = 50;
 
 /**
  * workMode values for a split AC supporting all five modes
@@ -72,12 +80,20 @@ export function parseShadow(reported: Record<string, unknown>): AcState {
   };
 }
 
-export function toActive(state: AcState): number {
+/**
+ * With `dryAsOff` (set when the dehumidifier accessory is enabled) the AC
+ * tile reports Off while the unit dehumidifies, so only the dehumidifier
+ * tile appears active — the two tiles behave like separate appliances.
+ */
+export function toActive(state: AcState, dryAsOff = false): number {
+  if (dryAsOff && state.workMode === WorkMode.DRY) {
+    return HK.Active.INACTIVE;
+  }
   return state.power ? HK.Active.ACTIVE : HK.Active.INACTIVE;
 }
 
-export function toCurrentHeaterCoolerState(state: AcState): number {
-  if (!state.power) {
+export function toCurrentHeaterCoolerState(state: AcState, dryAsOff = false): number {
+  if (!state.power || (dryAsOff && state.workMode === WorkMode.DRY)) {
     return HK.CurrentState.INACTIVE;
   }
   const { workMode, currentTemperature: current, targetTemperature: target } = state;
@@ -120,6 +136,21 @@ export function fromTargetHeaterCoolerState(value: number): number {
     case HK.TargetState.COOL: return WorkMode.COOL;
     default: return WorkMode.AUTO;
   }
+}
+
+export function isDehumidifying(state: AcState): boolean {
+  return state.power && state.workMode === WorkMode.DRY;
+}
+
+export function toDehumidifierActive(state: AcState): number {
+  return isDehumidifying(state) ? HK.Active.ACTIVE : HK.Active.INACTIVE;
+}
+
+/** Always DEHUMIDIFYING while running: the AC gives no idle/working signal. */
+export function toCurrentDehumidifierState(state: AcState): number {
+  return isDehumidifying(state)
+    ? HK.DehumidifierState.DEHUMIDIFYING
+    : HK.DehumidifierState.INACTIVE;
 }
 
 export function toSwingMode(state: AcState): number {

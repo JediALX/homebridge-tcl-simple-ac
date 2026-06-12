@@ -45,6 +45,7 @@ Or search for "TCL Simple AC" in the Homebridge UI. Then configure with your TCL
 |---|---|---|
 | `username` / `password` | — | TCL Home app credentials (required) |
 | `pollInterval` | `15` | Seconds between state reads |
+| `enableDehumidifier` | `false` | Expose Dry mode as a separate Dehumidifier accessory per AC (see below) |
 | `devices` | all split ACs | Optional allowlist of TCL device IDs (printed in the log at startup) |
 | `minTemp` / `maxTemp` | `16` / `31` | Target temperature range (°C) |
 | `loginUrl`, `cloudUrlsEndpoint`, `appId`, `iotEndpoint` | auto | Advanced endpoint overrides; normally never needed |
@@ -53,8 +54,18 @@ Or search for "TCL Simple AC" in the Homebridge UI. Then configure with your TCL
 
 - **Fan speed slider**: the first slider position is **Auto**, the remaining positions are the unit's manual speeds from lowest to highest. The slider snaps to valid positions.
 - **Oscillate** maps to the unit's vertical swing.
-- **Dry / Fan-only modes** (set from the IR remote or TCL app) have no HomeKit equivalent: the tile shows the unit as on and *Idle*, with the mode selector unchanged. The plugin never overrides what you set on the remote.
+- **Dry / Fan-only modes** (set from the IR remote or TCL app) have no HomeKit equivalent: the tile shows the unit as on and *Idle*, with the mode selector unchanged. The plugin never overrides what you set on the remote. (Dry mode gets a proper representation with `enableDehumidifier`, below.)
 - Selecting a mode in the Home app while the AC is off also powers it on (Apple-like behavior).
+
+## Optional: Dehumidifier accessory
+
+HomeKit has a native dehumidifier type, so with `"enableDehumidifier": true` each AC gains a **second tile** controlling its Dry mode. The two tiles act like separate appliances sharing one chassis:
+
+- Turning the **Dehumidifier on** switches the unit to Dry mode; the AC tile shows **Off** while dehumidifying.
+- Turning the **AC tile on** (or picking a mode) switches back to the last AC mode; the dehumidifier tile turns off.
+- Turning the **Dehumidifier off** powers the unit down.
+
+Caveats: the **humidity percentage shown is a fixed, synthetic 50%** (TCL split ACs report no humidity), and while in Dry mode the firmware controls fan speed and ignores the temperature setpoint itself. Disable the option and restart Homebridge to remove the tiles again.
 
 ## Probing your device
 

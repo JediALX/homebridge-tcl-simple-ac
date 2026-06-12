@@ -10,6 +10,7 @@ import {
 import path from 'node:path';
 
 import { TclAcAccessory } from './accessory';
+import { TclDehumidifierAccessory } from './dehumidifier';
 import {
   DEFAULT_APP_ID,
   DEFAULT_CLOUD_URLS_ENDPOINT,
@@ -30,6 +31,7 @@ export interface TclPlatformConfig extends PlatformConfig {
   password?: string;
   pollInterval?: number;
   devices?: string[];
+  enableDehumidifier?: boolean;
   minTemp?: number;
   maxTemp?: number;
   loginUrl?: string;
@@ -49,6 +51,7 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
   public readonly minTemp: number;
   public readonly maxTemp: number;
   public readonly pollIntervalMs: number;
+  public readonly dehumidifierEnabled: boolean;
 
   private readonly cachedAccessories: PlatformAccessory[] = [];
   private readonly handlers = new Map<string, TclAcAccessory>();
@@ -66,6 +69,7 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
 
     this.minTemp = this.config.minTemp ?? DEFAULT_MIN_TEMP_C;
     this.maxTemp = this.config.maxTemp ?? DEFAULT_MAX_TEMP_C;
+    this.dehumidifierEnabled = this.config.enableDehumidifier === true;
     this.pollIntervalMs = Math.max(
       MIN_POLL_INTERVAL_SECONDS,
       this.config.pollInterval ?? DEFAULT_POLL_INTERVAL_SECONDS,
@@ -142,7 +146,22 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
         this.log.info('Registered new accessory: %s', thing.nickName);
       }
       accessory.context.deviceId = thing.deviceId;
-      this.handlers.set(thing.deviceId, new TclAcAccessory(this, accessory, thing));
+      const handler = new TclAcAccessory(this, accessory, thing);
+      this.handlers.set(thing.deviceId, handler);
+
+      if (this.dehumidifierEnabled) {
+        const dhUuid = this.api.hap.uuid.generate(`${PLUGIN_NAME}:${thing.deviceId}:dehumidifier`);
+        seenUuids.add(dhUuid);
+        let dhAccessory = this.cachedAccessories.find((a) => a.UUID === dhUuid);
+        if (!dhAccessory) {
+          dhAccessory = new this.api.platformAccessory(`${thing.nickName} Dehumidifier`, dhUuid);
+          dhAccessory.context.deviceId = thing.deviceId;
+          this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [dhAccessory]);
+          this.log.info('Registered new accessory: %s Dehumidifier', thing.nickName);
+        }
+        dhAccessory.context.deviceId = thing.deviceId;
+        handler.attachSatellite(new TclDehumidifierAccessory(this, dhAccessory, thing, handler));
+      }
     }
 
     const stale = this.cachedAccessories.filter((a) => !seenUuids.has(a.UUID));

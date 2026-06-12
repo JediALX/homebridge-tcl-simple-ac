@@ -13,9 +13,11 @@ import {
   toRotationSpeed,
   toSwingMode,
   toTargetHeaterCoolerState,
+  WorkMode,
 } from './mapping';
 import { TclSimpleAcPlatform } from './platform';
 import { TclThing } from './tcl/api';
+import type { TclDehumidifierAccessory } from './dehumidifier';
 
 /** How long after a command we trust our optimistic state over polled state. */
 const POLL_SUPPRESS_MS = 5_000;
@@ -34,6 +36,7 @@ export class TclAcAccessory {
   private suppressPollUntil = 0;
   private pollFailures = 0;
   private fanPropsConfigured = false;
+  private satellite?: TclDehumidifierAccessory;
 
   constructor(
     private readonly platform: TclSimpleAcPlatform,
@@ -54,11 +57,11 @@ export class TclAcAccessory {
     this.service.setCharacteristic(C.Name, thing.nickName);
 
     this.service.getCharacteristic(C.Active)
-      .onGet(() => this.getValue((s) => toActive(s)))
+      .onGet(() => this.getValue((s) => toActive(s, this.dryAsOff)))
       .onSet((value) => this.setActive(value));
 
     this.service.getCharacteristic(C.CurrentHeaterCoolerState)
-      .onGet(() => this.getValue((s) => toCurrentHeaterCoolerState(s)));
+      .onGet(() => this.getValue((s) => toCurrentHeaterCoolerState(s, this.dryAsOff)));
 
     this.service.getCharacteristic(C.TargetHeaterCoolerState)
       .onGet(() => this.getValue((s) => toTargetHeaterCoolerState(s) ?? this.lastTargetState))
@@ -90,25 +93,56 @@ export class TclAcAccessory {
       .onSet((value) => this.setSwingMode(value));
   }
 
+  /** Attach the optional dehumidifier accessory sharing this device's poll/commands. */
+  attachSatellite(satellite: TclDehumidifierAccessory): void {
+    this.satellite = satellite;
+  }
+
+  /** Whether the AC tile should report Off while the unit is in Dry mode. */
+  private get dryAsOff(): boolean {
+    return this.platform.dehumidifierEnabled;
+  }
+
   private clampTemp(value: number): number {
     return clampTemperature(value, this.platform.minTemp, this.platform.maxTemp);
   }
 
-  private getValue<T extends CharacteristicValue>(selector: (state: AcState) => T): T {
+  /** Last known state, or null before the first successful poll. */
+  get currentState(): AcState | null {
+    return this.state;
+  }
+
+  /** Last known state; throws (accessory "Not Responding") when stale or missing. */
+  snapshot(): AcState {
     if (!this.state || this.pollFailures >= MAX_POLL_FAILURES) {
       throw new this.platform.api.hap.HapStatusError(
         this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE,
       );
     }
-    return selector(this.state);
+    return this.state;
+  }
+
+  private getValue<T extends CharacteristicValue>(selector: (state: AcState) => T): T {
+    return selector(this.snapshot());
   }
 
   // ---- HomeKit -> TCL ----
 
   private setActive(value: CharacteristicValue): void {
     const on = value === HK.Active.ACTIVE;
-    if (this.state?.power === on) {
+    const shownActive = this.state ? toActive(this.state, this.dryAsOff) === HK.Active.ACTIVE : undefined;
+    if (shownActive === on) {
       return; // Home app re-sends Active alongside other writes; don't spam the AC.
+    }
+    if (on && this.dryAsOff && this.state?.power && this.state.workMode === WorkMode.DRY) {
+      // The tile shows Off while dehumidifying; turning it on means
+      // "back to being an AC": leave Dry for the last AC mode.
+      const workMode = fromTargetHeaterCoolerState(this.lastTargetState);
+      this.queueDesired({ powerSwitch: 1, workMode }, (s) => {
+        s.power = true;
+        s.workMode = workMode;
+      });
+      return;
     }
     this.queueDesired({ powerSwitch: on ? 1 : 0 }, (s) => {
       s.power = on;
@@ -163,7 +197,7 @@ export class TclAcAccessory {
    * update local state, and (re)arm the debounce timer so rapid writes from
    * the Home app coalesce into a single shadow publish.
    */
-  private queueDesired(desired: Record<string, unknown>, applyOptimistic: (state: AcState) => void): void {
+  queueDesired(desired: Record<string, unknown>, applyOptimistic: (state: AcState) => void): void {
     Object.assign(this.pendingDesired, desired);
     if (this.state) {
       applyOptimistic(this.state);
@@ -245,8 +279,8 @@ export class TclAcAccessory {
       return;
     }
     const { Characteristic: C } = this.platform;
-    this.service.updateCharacteristic(C.Active, toActive(s));
-    this.service.updateCharacteristic(C.CurrentHeaterCoolerState, toCurrentHeaterCoolerState(s));
+    this.service.updateCharacteristic(C.Active, toActive(s, this.dryAsOff));
+    this.service.updateCharacteristic(C.CurrentHeaterCoolerState, toCurrentHeaterCoolerState(s, this.dryAsOff));
     const target = toTargetHeaterCoolerState(s);
     this.service.updateCharacteristic(C.TargetHeaterCoolerState, target ?? this.lastTargetState);
     this.service.updateCharacteristic(C.CurrentTemperature, s.currentTemperature);
@@ -254,5 +288,6 @@ export class TclAcAccessory {
     this.service.updateCharacteristic(C.HeatingThresholdTemperature, this.clampTemp(s.targetTemperature));
     this.service.updateCharacteristic(C.RotationSpeed, toRotationSpeed(s));
     this.service.updateCharacteristic(C.SwingMode, toSwingMode(s));
+    this.satellite?.pushState(s);
   }
 }
