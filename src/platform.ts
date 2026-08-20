@@ -92,13 +92,21 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
     this.shadow = new ShadowClient(this.session, this.config.iotEndpoint, this.log);
 
     this.api.on('didFinishLaunching', () => {
-      void this.discoverDevices();
+      this.runSafely(this.discoverDevices(), 'device discovery');
     });
     this.api.on('shutdown', () => {
       if (this.pollTimer) {
         clearInterval(this.pollTimer);
       }
     });
+  }
+
+  /**
+   * Last line of defence for background work: an unhandled rejection here
+   * would take the whole Homebridge process down with it.
+   */
+  runSafely(work: Promise<unknown>, what: string): void {
+    work.catch((e) => this.log.error('Unexpected error during %s: %s', what, (e as Error).stack ?? e));
   }
 
   configureAccessory(accessory: PlatformAccessory): void {
@@ -113,7 +121,7 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
     } catch (e) {
       this.log.error('TCL device discovery failed: %s', (e as Error).message);
       this.log.info('Retrying discovery in %d s', this.discoveryBackoffMs / 1000);
-      setTimeout(() => void this.discoverDevices(), this.discoveryBackoffMs);
+      setTimeout(() => this.runSafely(this.discoverDevices(), 'device discovery'), this.discoveryBackoffMs);
       this.discoveryBackoffMs = Math.min(this.discoveryBackoffMs * 2, 600_000);
       return;
     }
@@ -171,7 +179,10 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
     }
 
     await this.pollAll();
-    this.pollTimer = setInterval(() => void this.pollAll(), this.pollIntervalMs);
+    this.pollTimer = setInterval(
+      () => this.runSafely(this.pollAll(), 'poll'),
+      this.pollIntervalMs,
+    );
   }
 
   private async pollAll(): Promise<void> {

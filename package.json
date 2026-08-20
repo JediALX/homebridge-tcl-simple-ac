@@ -1,22 +1,30 @@
 {
   "name": "homebridge-tcl-simple-ac",
   "displayName": "TCL Simple AC",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Homebridge plugin exposing TCL Home split air conditioners (e.g. BreezeIN 2.0) as single, Apple-like HeaterCooler accessories.",
+  "author": "Alexandru-Dan Dumitrescu (https://github.com/JediALX)",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/JediALX/homebridge-tcl-simple-ac.git"
   },
+  "homepage": "https://github.com/JediALX/homebridge-tcl-simple-ac#readme",
+  "bugs": {
+    "url": "https://github.com/JediALX/homebridge-tcl-simple-ac/issues"
+  },
   "type": "commonjs",
   "main": "dist/index.js",
   "engines": {
-    "node": ">=18.15.0",
-    "homebridge": "^1.8.0 || ^2.0.0-beta.0"
+    "node": "^22 || ^24 || ^26",
+    "homebridge": "^1.8.0 || ^2.0.0"
   },
   "keywords": [
     "homebridge-plugin",
+    "supports-hap",
+    "homekit",
     "tcl",
+    "breezein",
     "air-conditioner",
     "heatercooler"
   ],

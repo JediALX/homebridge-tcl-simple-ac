@@ -4,6 +4,12 @@ Homebridge plugin that exposes **TCL Home split air conditioners** (built for th
 
 Each AC appears in the Home app as **one HeaterCooler tile** — power, Auto/Heat/Cool mode, target temperature, current temperature, fan speed and oscillation, exactly like Apple's native AC UI. TCL features that HomeKit cannot represent (Dry mode, Fan-only mode, eco, turbo, sleep, display, beep) are deliberately **not** exposed, so there are no satellite switches cluttering your home.
 
+## Supported devices
+
+Developed and tested against **TCL BreezeIN 2.0** split ACs (firmware `V8-R82CT20-WFMV206`, EU account, heat-pump models). Other TCL split ACs that appear in the TCL Home app should work — the plugin adapts to the properties each unit reports (both fan-speed scales and both swing properties are handled) — but they are untested. If yours works, or doesn't, please [open an issue](https://github.com/JediALX/homebridge-tcl-simple-ac/issues) and include the output of `npm run probe` (it contains no credentials).
+
+**Requirements**: Node 22, 24 or 26, Homebridge 1.8+ or 2.x, and a TCL Home account with your ACs already set up in the app.
+
 ## How it works
 
 The plugin signs in to the TCL cloud with your TCL Home app credentials (the same reverse-engineered API used by the excellent [ha-tcl-home-unofficial-integration](https://github.com/nemesa/ha-tcl-home-unofficial-integration)):
@@ -69,6 +75,22 @@ HomeKit has a native dehumidifier type, so with `"enableDehumidifier": true` eac
 
 Caveats: the **humidity percentage shown is a fixed, synthetic 50%** (TCL split ACs report no humidity), and while in Dry mode the firmware controls fan speed and ignores the temperature setpoint itself. Disable the option and restart Homebridge to remove the tiles again.
 
+## Limitations
+
+- **Cloud only.** Every read and command goes through TCL's cloud; there is no local control. If your internet or TCL's service is down, so is the plugin.
+- **Polling, not push.** State is refreshed every 15 s by default, so changes made on the IR remote take up to that long to appear in Home. Commands you send from Home apply immediately (optimistically).
+- **Dry and Fan-only** are not part of the HeaterCooler tile by design; Dry can be exposed separately (see above), Fan-only cannot be represented at all.
+- **No humidity sensor** exists on these units, so the optional dehumidifier reports a fixed 50%.
+- The TCL API is **unofficial and undocumented** — TCL can change or break it at any time.
+
+## Troubleshooting
+
+- **"Missing TCL Home username/password"** — the plugin is installed but not configured; fill in the credentials in the plugin settings.
+- **Login or discovery failures** — check the credentials in the TCL Home app first. The plugin retries with a growing backoff, so watch the log rather than restarting repeatedly.
+- **Stuck session** — delete `tcl-simple-ac/tcl-session.json` from your Homebridge storage directory and restart to force a fresh login. Note that TCL sometimes invalidates a session when the same account logs in elsewhere.
+- **Wrong or missing devices** — run the probe (below) to see exactly what your account exposes, then use the `devices` allowlist if needed.
+- Enable Homebridge's debug mode to see every command the plugin publishes.
+
 ## Probing your device
 
 To verify connectivity and dump the raw state of every device on your account (useful for debugging or adding support for new models):
@@ -88,6 +110,10 @@ npm test
 npm link
 homebridge -D -U ./.homebridge-dev -P .
 ```
+
+## Contributing
+
+Issues and pull requests are welcome. For device-support reports, please include your model, firmware version and the probe output.
 
 ## Credits & disclaimer
 

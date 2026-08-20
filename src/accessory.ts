@@ -218,7 +218,10 @@ export class TclAcAccessory {
     if (this.commandTimer) {
       clearTimeout(this.commandTimer);
     }
-    this.commandTimer = setTimeout(() => void this.flushCommands(), COMMAND_DEBOUNCE_MS);
+    this.commandTimer = setTimeout(
+      () => this.platform.runSafely(this.flushCommands(), `command for ${this.thing.nickName}`),
+      COMMAND_DEBOUNCE_MS,
+    );
   }
 
   private async flushCommands(): Promise<void> {
