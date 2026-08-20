@@ -153,6 +153,16 @@ export function toCurrentDehumidifierState(state: AcState): number {
     : HK.DehumidifierState.INACTIVE;
 }
 
+/**
+ * Desired-state fragment for powering the unit on. Oscillation is pinned to
+ * the state HomeKit is showing, because the AC otherwise restores the swing
+ * setting from its own memory and can start oscillating on power-on.
+ */
+export function powerOnCommand(state: AcState | null): Record<string, number> {
+  const property = state?.swingProperty ?? 'verticalSwitch';
+  return { powerSwitch: 1, [property]: state?.verticalSwing ? 1 : 0 };
+}
+
 export function toSwingMode(state: AcState): number {
   return state.verticalSwing ? HK.SwingMode.ENABLED : HK.SwingMode.DISABLED;
 }
@@ -181,6 +191,10 @@ export function fanSpeedModel(profile: FanSpeedProfile): FanSpeedModel {
 
 /** Convert reported fan state to a RotationSpeed percentage. */
 export function toRotationSpeed(state: AcState): number {
+  if (!state.power) {
+    // Apple's convention for fan-type controls: no airflow while off.
+    return 0;
+  }
   const gears = MANUAL_GEARS[state.fanSpeedProfile];
   const { minStep, positions } = fanSpeedModel(state.fanSpeedProfile);
   const isAuto = state.fanSpeedProfile === 'windSpeed7Gear'

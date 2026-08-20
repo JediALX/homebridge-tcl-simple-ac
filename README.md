@@ -56,6 +56,8 @@ Or search for "TCL Simple AC" in the Homebridge UI. Then configure with your TCL
 - **Oscillate** maps to the unit's vertical swing.
 - **Dry / Fan-only modes** (set from the IR remote or TCL app) have no HomeKit equivalent: the tile shows the unit as on and *Idle*, with the mode selector unchanged. The plugin never overrides what you set on the remote. (Dry mode gets a proper representation with `enableDehumidifier`, below.)
 - Selecting a mode in the Home app while the AC is off also powers it on (Apple-like behavior).
+- **Powering on re-asserts oscillation** to whatever the Home app is showing, so the unit cannot resume
+  swinging from its own memory when it starts up. Fan speed reads as 0 while the unit is off.
 
 ## Optional: Dehumidifier accessory
 

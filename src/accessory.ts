@@ -8,6 +8,7 @@ import {
   fromTargetHeaterCoolerState,
   HK,
   parseShadow,
+  powerOnCommand,
   toActive,
   toCurrentHeaterCoolerState,
   toRotationSpeed,
@@ -55,6 +56,7 @@ export class TclAcAccessory {
     this.service =
       this.accessory.getService(S.HeaterCooler) ?? this.accessory.addService(S.HeaterCooler);
     this.service.setCharacteristic(C.Name, thing.nickName);
+    this.service.setPrimaryService(true);
 
     this.service.getCharacteristic(C.Active)
       .onGet(() => this.getValue((s) => toActive(s, this.dryAsOff)))
@@ -126,6 +128,15 @@ export class TclAcAccessory {
     return selector(this.snapshot());
   }
 
+  /**
+   * Desired-state fragment for powering the unit on. Oscillation is pinned to
+   * the value HomeKit is showing, because the AC otherwise restores the swing
+   * setting from its own memory and starts oscillating on power-on.
+   */
+  powerOnDesired(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return { ...powerOnCommand(this.state), ...extra };
+  }
+
   // ---- HomeKit -> TCL ----
 
   private setActive(value: CharacteristicValue): void {
@@ -138,13 +149,13 @@ export class TclAcAccessory {
       // The tile shows Off while dehumidifying; turning it on means
       // "back to being an AC": leave Dry for the last AC mode.
       const workMode = fromTargetHeaterCoolerState(this.lastTargetState);
-      this.queueDesired({ powerSwitch: 1, workMode }, (s) => {
+      this.queueDesired(this.powerOnDesired({ workMode }), (s) => {
         s.power = true;
         s.workMode = workMode;
       });
       return;
     }
-    this.queueDesired({ powerSwitch: on ? 1 : 0 }, (s) => {
+    this.queueDesired(on ? this.powerOnDesired() : { powerSwitch: 0 }, (s) => {
       s.power = on;
     });
   }
@@ -152,7 +163,7 @@ export class TclAcAccessory {
   private setTargetState(value: CharacteristicValue): void {
     const workMode = fromTargetHeaterCoolerState(value as number);
     this.lastTargetState = value as number;
-    this.queueDesired({ workMode, powerSwitch: 1 }, (s) => {
+    this.queueDesired(this.powerOnDesired({ workMode }), (s) => {
       s.workMode = workMode;
       s.power = true;
     });

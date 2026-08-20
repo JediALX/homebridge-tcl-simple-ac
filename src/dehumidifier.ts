@@ -41,6 +41,7 @@ export class TclDehumidifierAccessory {
       this.accessory.getService(S.HumidifierDehumidifier)
       ?? this.accessory.addService(S.HumidifierDehumidifier);
     this.service.setCharacteristic(C.Name, `${thing.nickName} Dehumidifier`);
+    this.service.setPrimaryService(true);
 
     this.service.getCharacteristic(C.Active)
       .onGet(() => toDehumidifierActive(this.ac.snapshot()))
@@ -75,7 +76,7 @@ export class TclDehumidifierAccessory {
       return; // Home app re-sends Active alongside other writes; don't spam the AC.
     }
     if (on) {
-      this.ac.queueDesired({ workMode: WorkMode.DRY, powerSwitch: 1 }, (s) => {
+      this.ac.queueDesired(this.ac.powerOnDesired({ workMode: WorkMode.DRY }), (s) => {
         s.workMode = WorkMode.DRY;
         s.power = true;
       });

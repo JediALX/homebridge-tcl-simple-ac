@@ -8,6 +8,7 @@ import {
   HK,
   isDehumidifying,
   parseShadow,
+  powerOnCommand,
   toActive,
   toCurrentDehumidifierState,
   toCurrentHeaterCoolerState,
@@ -194,6 +195,30 @@ describe('dehumidifier mapping', () => {
   });
 });
 
+describe('power-on command', () => {
+  it('pins swing off when HomeKit shows oscillation off', () => {
+    const state = parseShadow({ ...baseReported, powerSwitch: 0, verticalSwitch: 0 });
+    assert.deepEqual(powerOnCommand(state), { powerSwitch: 1, verticalSwitch: 0 });
+  });
+
+  it('keeps swing on when HomeKit shows oscillation on', () => {
+    const state = parseShadow({ ...baseReported, verticalSwitch: 1 });
+    assert.deepEqual(powerOnCommand(state), { powerSwitch: 1, verticalSwitch: 1 });
+  });
+
+  it('uses the firmware\'s own swing property (BreezeIN 2.0 verticalWind)', () => {
+    const state = parseShadow({
+      powerSwitch: 0, workMode: 1, targetTemperature: 22, currentTemperature: 23.5,
+      windSpeed7Gear: 0, windSpeedAutoSwitch: 1, verticalWind: 1,
+    });
+    assert.deepEqual(powerOnCommand(state), { powerSwitch: 1, verticalWind: 1 });
+  });
+
+  it('falls back to verticalSwitch before the first poll', () => {
+    assert.deepEqual(powerOnCommand(null), { powerSwitch: 1, verticalSwitch: 0 });
+  });
+});
+
 describe('fan speed mapping', () => {
   it('legacy windSpeed profile has 6 slider positions (auto + 5 gears)', () => {
     const model = fanSpeedModel('windSpeed');
@@ -231,6 +256,12 @@ describe('fan speed mapping', () => {
       fromRotationSpeed(toRotationSpeed(auto), 'windSpeed7Gear'),
       { windSpeed7Gear: 0, windSpeedAutoSwitch: 1 },
     );
+  });
+
+  it('reports 0 while the unit is off', () => {
+    assert.equal(toRotationSpeed(parseShadow({ ...baseReported, powerSwitch: 0, windSpeed: 4 })), 0);
+    // ...and the real speed again once it is on.
+    assert.ok(toRotationSpeed(parseShadow({ ...baseReported, windSpeed: 4 })) > 0);
   });
 
   it('treats unknown turbo value as max speed', () => {
