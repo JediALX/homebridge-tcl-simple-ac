@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (unreleased)
+## 1.1.0 (unreleased; beta 1.1.0-beta.0 on npm under the `beta` tag)
 
 ### Added
 
