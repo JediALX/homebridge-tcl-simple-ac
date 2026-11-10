@@ -124,6 +124,20 @@ describe('accessory (behaviour before compensation)', () => {
     assert.equal(fake.log.at('error').length, 1);
   });
 
+  it('reports whether a queued command was published', async () => {
+    const { fake, handler } = setup();
+    await handler.poll();
+    const ok = handler.queueDesired({ targetTemperature: 25 }, () => {});
+    await flushCommands();
+    assert.equal(await ok, true);
+
+    mock.timers.tick(6_000);
+    fake.shadow.failPublishes = 1;
+    const failed = handler.queueDesired({ targetTemperature: 26 }, () => {});
+    await flushCommands();
+    assert.equal(await failed, false);
+  });
+
   it('makes no cloud calls other than the poll and the user’s commands', async () => {
     const { fake, handler } = setup();
     await handler.poll();

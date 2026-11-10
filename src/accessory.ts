@@ -33,6 +33,7 @@ export class TclAcAccessory {
   private lastTargetState: number = HK.TargetState.AUTO;
 
   private pendingDesired: Record<string, unknown> = {};
+  private pendingWaiters: ((published: boolean) => void)[] = [];
   private commandTimer?: NodeJS.Timeout;
   private suppressPollUntil = 0;
   private pollFailures = 0;
@@ -207,8 +208,12 @@ export class TclAcAccessory {
    * Merge a partial desired state into the pending command, optimistically
    * update local state, and (re)arm the debounce timer so rapid writes from
    * the Home app coalesce into a single shadow publish.
+   *
+   * Resolves once that publish is done: true when it succeeded, false when it
+   * failed. It never rejects, so callers that ignore it stay safe.
    */
-  queueDesired(desired: Record<string, unknown>, applyOptimistic: (state: AcState) => void): void {
+  queueDesired(desired: Record<string, unknown>, applyOptimistic: (state: AcState) => void): Promise<boolean> {
+    const published = new Promise<boolean>((resolve) => this.pendingWaiters.push(resolve));
     Object.assign(this.pendingDesired, desired);
     if (this.state) {
       applyOptimistic(this.state);
@@ -222,23 +227,29 @@ export class TclAcAccessory {
       () => this.platform.runSafely(this.flushCommands(), `command for ${this.thing.nickName}`),
       COMMAND_DEBOUNCE_MS,
     );
+    return published;
   }
 
   private async flushCommands(): Promise<void> {
     const desired = this.pendingDesired;
+    const waiters = this.pendingWaiters;
     this.pendingDesired = {};
+    this.pendingWaiters = [];
     if (Object.keys(desired).length === 0) {
+      waiters.forEach((resolve) => resolve(true));
       return;
     }
     try {
       this.platform.log.debug('[%s] publishing desired state: %j', this.thing.nickName, desired);
       await this.platform.shadow.setDesiredState(this.thing.deviceId, desired);
       this.suppressPollUntil = Date.now() + POLL_SUPPRESS_MS;
+      waiters.forEach((resolve) => resolve(true));
     } catch (e) {
       this.platform.log.error(
         '[%s] failed to send command %j: %s',
         this.thing.nickName, desired, (e as Error).message,
       );
+      waiters.forEach((resolve) => resolve(false));
       // Re-sync from the device so HomeKit doesn't keep showing the failed optimistic state.
       this.suppressPollUntil = 0;
       await this.poll();
