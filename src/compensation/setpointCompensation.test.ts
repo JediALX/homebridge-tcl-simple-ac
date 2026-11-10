@@ -254,6 +254,29 @@ describe('CompensatedThermostat', () => {
   });
 });
 
+describe('CompensatedThermostat logging', () => {
+  it('logs "already set" when the value changes, not on every poll', async () => {
+    const debug: string[] = [];
+    let now = 0;
+    const state: CompensationState = {};
+    const t = new CompensatedThermostat({
+      device: { setTargetTemperature: async () => {} },
+      source: { latest: () => ({ celsius: 19, timestamp: now }) },
+      settings: SETTINGS,
+      state,
+      persist: () => {},
+      log: { ...silentLog, debug: (m) => debug.push(m) },
+      now: () => now,
+    });
+    await t.onDeviceState(heat()); // writes 26
+    for (let i = 0; i < 5; i++) {
+      now += 15_000;
+      await t.onDeviceState(heat({ deviceTarget: 26, internalTemperature: 23 + i * 0.1 }));
+    }
+    assert.equal(debug.filter((m) => m.includes('already set')).length, 1);
+  });
+});
+
 describe('SetpointCompensator smoothing', () => {
   function stepResponse(callEveryMs: number, forMs: number): number {
     let now = 0;

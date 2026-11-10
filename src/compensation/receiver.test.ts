@@ -83,7 +83,7 @@ describe('HomeKitTemperatureReceiver', () => {
   });
 
   it('logs every field of the shortcut action, without the token', () => {
-    assert.deepEqual(log.at('info'), [
+    assert.deepEqual(log.at('info').slice(0, 5), [
       'temperature receiver ready. In the shortcut\'s "Get Contents of URL" action set:',
       `  URL: ${url}`,
       '  Method: POST',
@@ -106,6 +106,28 @@ describe('HomeKitTemperatureReceiver', () => {
     assert.deepEqual(anyHost.shortcutUrls(), [
       'http://192.168.1.20:18581/temperatures',
       'http://172.17.0.1:18581/temperatures',
+    ]);
+  });
+
+  it('logs the first push at info and later ones at debug', () => {
+    assert.deepEqual(log.at('info').slice(5), ['first temperature push received: living 21.4 °C, bedroom 20.9 °C']);
+    assert.ok(log.at('debug').includes('temperature push: living 22 °C'));
+  });
+
+  it('logs every push at info with logEveryPush', async () => {
+    const verboseLog = new FakeLog();
+    const verbose = new HomeKitTemperatureReceiver(
+      { port: 0, bindHost: '127.0.0.1', token: TOKEN, rooms: ['living'], logEveryPush: true },
+      verboseLog,
+    );
+    await verbose.start();
+    const at = `http://127.0.0.1:${verbose.port()}/temperatures`;
+    await post('{"readings":{"living":21}}', TOKEN, at);
+    await post('{"readings":{"living":"21,5 °C"}}', TOKEN, at);
+    await verbose.stop();
+    assert.deepEqual(verboseLog.at('info').slice(5), [
+      'first temperature push received: living 21 °C',
+      'temperature push: living 21.5 °C',
     ]);
   });
 

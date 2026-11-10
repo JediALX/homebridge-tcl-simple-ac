@@ -109,9 +109,9 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
       this.log,
     );
     if (this.compensation.status === 'on') {
-      const { port, bindHost, token, rooms } = this.compensation;
+      const { port, bindHost, token, rooms, logReadings } = this.compensation;
       this.receiver = new HomeKitTemperatureReceiver(
-        { port, bindHost, token, rooms: [...new Set(rooms.values())] },
+        { port, bindHost, token, rooms: [...new Set(rooms.values())], logEveryPush: logReadings },
         this.compensationLog(),
       );
     }

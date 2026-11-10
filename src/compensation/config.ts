@@ -12,6 +12,7 @@ export interface CompensationConfig {
   smoothingMinutes?: unknown;
   minChangeIntervalSeconds?: unknown;
   rooms?: unknown;
+  logReadings?: unknown;
 }
 
 export const DEFAULT_RECEIVER_PORT = 18581;
@@ -33,6 +34,8 @@ export type ParsedCompensation =
       readonly bindHost: string | undefined;
       readonly token: string;
       readonly sensorPollIntervalMs: number;
+      /** Log every temperature push at info level. */
+      readonly logReadings: boolean;
       readonly settings: CompensationSettings;
       /** deviceId -> room key */
       readonly rooms: ReadonlyMap<string, string>;
@@ -88,6 +91,10 @@ export function parseCompensationConfig(
     problems.push('bindHost must be an IP address or empty');
   }
 
+  if (c.logReadings !== undefined && c.logReadings !== null && typeof c.logReadings !== 'boolean') {
+    problems.push('logReadings must be true or false');
+  }
+
   const rooms = new Map<string, string>();
   if (!Array.isArray(c.rooms) || c.rooms.length === 0) {
     problems.push('rooms must map at least one device ID to a room key');
@@ -119,6 +126,7 @@ export function parseCompensationConfig(
     bindHost,
     token,
     sensorPollIntervalMs: sensorPollIntervalSeconds * 1000,
+    logReadings: c.logReadings === true,
     rooms,
     settings: {
       minSetpoint: range.minSetpoint,

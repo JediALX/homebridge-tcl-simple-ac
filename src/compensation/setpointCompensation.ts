@@ -159,6 +159,8 @@ export class CompensatedThermostat {
   private transitioned = false;
   /** The AC left heat/cool while holding a compensated target: put the user's target back. */
   private restorePending = false;
+  /** Last "already set" debug line's key, so it is logged on change rather than every poll. */
+  private lastNoopKey: string | undefined;
 
   constructor(private readonly deps: ThermostatDeps) {
     this.now = deps.now ?? Date.now;
@@ -316,7 +318,11 @@ export class CompensatedThermostat {
       this.userChangePending = false;
       this.restorePending = false;
       this.transitioned = false;
-      this.deps.log.debug(`compensation: ${reason} -> ${candidate} already set`);
+      const noopKey = `${userTarget}->${candidate}`;
+      if (noopKey !== this.lastNoopKey) {
+        this.lastNoopKey = noopKey;
+        this.deps.log.debug(`compensation: ${reason} -> ${candidate} already set`);
+      }
       return undefined;
     }
     if (!bypassRateLimit && this.now() - this.lastWriteAt < this.settings.minChangeIntervalMs) {
@@ -336,6 +342,7 @@ export class CompensatedThermostat {
       return false;
     }
     this.lastWriteAt = this.now();
+    this.lastNoopKey = undefined;
     this.restorePending = false;
     this.transitioned = false;
     this.state.lastSent = { workMode: planned.workMode, celsius: planned.celsius };

@@ -28,6 +28,8 @@ export interface ReceiverOptions {
   readonly token: string;
   /** Room keys the config maps to devices. Others are reported once and ignored. */
   readonly rooms: readonly string[];
+  /** Log every push at info level. Otherwise only the first push after startup is. */
+  readonly logEveryPush?: boolean;
 }
 
 const MAX_BODY_BYTES = 8 * 1024;
@@ -173,7 +175,7 @@ export class HomeKitTemperatureReceiver {
 
   private ingest(raw: Record<string, unknown>): number {
     const now = this.now();
-    let accepted = 0;
+    const accepted: string[] = [];
     for (const [room, value] of Object.entries(raw)) {
       if (!this.opts.rooms.includes(room)) {
         if (!this.reportedUnknown.has(room)) {
@@ -188,13 +190,19 @@ export class HomeKitTemperatureReceiver {
         continue;
       }
       this.readings.set(room, { celsius, timestamp: now });
-      accepted++;
+      accepted.push(`${room} ${celsius} °C`);
     }
-    if (accepted > 0) {
+    if (accepted.length > 0) {
+      const first = this.lastPush === undefined;
       this.lastPush = now;
-      this.log.debug(`temperature push: ${JSON.stringify(raw)}`);
+      const line = `${first ? 'first temperature push received' : 'temperature push'}: ${accepted.join(', ')}`;
+      if (first || this.opts.logEveryPush) {
+        this.log.info(line);
+      } else {
+        this.log.debug(line);
+      }
     }
-    return accepted;
+    return accepted.length;
   }
 }
 

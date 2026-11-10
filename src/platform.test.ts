@@ -179,6 +179,14 @@ describe('compensation end to end', () => {
     assert.equal(r.hc().getCharacteristic(C.HeatingThresholdTemperature).value, 23);
   });
 
+  it('logs every push at info when logReadings is on', async (t) => {
+    const port = await freePort();
+    const r = await launch(t, { compensation: { ...compensationConfig(port), logReadings: true } });
+    await push(port, { living: 19 });
+    await push(port, { living: '19,5 °C' });
+    assert.ok(r.log.at('info').includes('temperature push: living 19.5 °C'));
+  });
+
   it('leaves unmapped devices alone while others compensate', async (t) => {
     const port = await freePort();
     const r = await launch(t, { compensation: compensationConfig(port), things: [LIVING, BEDROOM] });

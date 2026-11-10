@@ -131,12 +131,13 @@ A Homebridge plugin cannot read other HomeKit accessories, so Apple Home deliver
 | `maxOffset` | `5` | Largest correction in °C |
 | `smoothingMinutes` | `10` | How gently the correction follows changes; `0` turns smoothing off |
 | `minChangeIntervalSeconds` | `180` | Minimum time between automatic target writes |
+| `logReadings` | `false` | Log every temperature push. Without it, only the first push after a restart is logged |
 
 To switch the feature off, set `enabled` to `false` (or remove the section) and restart. Each AC gets your plain target back the next time it is on, and the Sensor poll switch is removed, together with the automation that uses it.
 
 ### Troubleshooting compensation
 
-- The log shows one line per write, e.g. `compensation: user=22 internal=23 external=19 -> sent 26`, and warns when no readings arrive, when they stop or resume, and when the shortcut sends a room key that isn't configured.
+- After a restart the log shows the first temperature push (`first temperature push received: living 21.4 °C`); turn on `logReadings` to see every one. It also shows one line per write, e.g. `compensation: user=22 internal=23 external=19 -> sent 26`, and warns when no readings arrive, when they stop or resume, and when the shortcut sends a room key that isn't configured.
 - Test the receiver from any computer on your network (expect `HTTP 204`):
 
   ```bash

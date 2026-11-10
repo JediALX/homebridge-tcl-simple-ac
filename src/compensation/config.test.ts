@@ -32,6 +32,7 @@ describe('parseCompensationConfig', () => {
     assert.equal(result.port, 18581);
     assert.equal(result.bindHost, undefined);
     assert.equal(result.sensorPollIntervalMs, 180_000);
+    assert.equal(result.logReadings, false);
     assert.deepEqual([...result.rooms], [['dev-living', 'living']]);
     assert.deepEqual(result.settings, {
       minSetpoint: 16,
@@ -60,6 +61,7 @@ describe('parseCompensationConfig', () => {
       [{ rooms: [{ deviceId: 'a', roomKey: 'x' }, { deviceId: 'a', roomKey: 'y' }] }, /more than once/],
       [{ rooms: 'living' }, /rooms/],
       [{ bindHost: 42 }, /bindHost/],
+      [{ logReadings: 'yes' }, /logReadings/],
     ];
     for (const [override, expected] of cases) {
       const { result, warnings } = parse({ ...VALID, ...override });
@@ -68,6 +70,11 @@ describe('parseCompensationConfig', () => {
       assert.match(warnings[0], expected);
       assert.match(warnings[0], /TCL control is unaffected/);
     }
+  });
+
+  it('turns per-push logging on with logReadings: true', () => {
+    const { result } = parse({ ...VALID, logReadings: true });
+    assert.equal(result.status === 'on' && result.logReadings, true);
   });
 
   it('accepts an empty bindHost as all interfaces and trims values', () => {

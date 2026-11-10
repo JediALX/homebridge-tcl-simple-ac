@@ -108,6 +108,12 @@
               }
             }
           },
+          "logReadings": {
+            "title": "Log every temperature push",
+            "type": "boolean",
+            "default": false,
+            "description": "Writes each reading the Home automation sends to the Homebridge log. Without it, only the first push after a restart is logged."
+          },
           "port": {
             "title": "Receiver port",
             "type": "integer",
@@ -188,8 +194,14 @@
           ]
         },
         {
+          "key": "compensation.logReadings",
+          "condition": {
+            "functionBody": "return model.compensation && model.compensation.enabled === true;"
+          }
+        },
+        {
           "type": "help",
-          "helpvalue": "<p><b>One-time setup in the Home app</b> (after saving and restarting):</p><ol><li>A <b>Sensor poll</b> switch appears. Put it in a room you don't use and leave it out of favourites.</li><li>Automation tab → <b>+</b> → <i>An Accessory is Controlled</i> → <b>Sensor poll</b> → <i>Turns On</i>. On the actions screen choose <b>Convert to Shortcut</b>.</li><li>For each room, add <b>Get the state of</b> → the room's sensor → <i>Current Temperature</i>.</li><li>Add <b>Get Contents of URL</b>:<ul><li>URL: <code>http://&lt;Homebridge IP&gt;:18581/temperatures</code>. That is the address you open this UI with, but on port 18581 (or the port set below) and with <code>/temperatures</code>. The exact URL is printed in the Homebridge log at startup.</li><li>Method <b>POST</b>; Headers: <code>x-token</code> = the token above.</li><li>Request Body <b>JSON</b>: add a field <code>readings</code> of type <b>Dictionary</b>, and inside it one field per room: the room key from the list above → that room's <i>Current Temperature</i>.</li></ul></li><li>Never include the ACs' own Current Temperature.</li><li>Test by tapping <b>Sensor poll</b>: the log shows the pushed readings, or a warning that says what is wrong.</li></ol>",
+          "helpvalue": "<p><b>One-time setup in the Home app</b> (after saving and restarting):</p><ol><li>A <b>Sensor poll</b> switch appears. Put it in a room you don't use and leave it out of favourites.</li><li>Automation tab → <b>+</b> → <i>An Accessory is Controlled</i> → <b>Sensor poll</b> → <i>Turns On</i>. On the actions screen choose <b>Convert to Shortcut</b>.</li><li>For each room, add <b>Get the state of</b> → the room's sensor → <i>Current Temperature</i>.</li><li>Add <b>Get Contents of URL</b>:<ul><li>URL: <code>http://&lt;Homebridge IP&gt;:18581/temperatures</code>. That is the address you open this UI with, but on port 18581 (or the port set below) and with <code>/temperatures</code>. The Homebridge log prints this URL and all the settings below at startup.</li><li>Method <b>POST</b>; Headers: <code>x-token</code> = the token above.</li><li>Request Body <b>JSON</b>: add a field <code>readings</code> of type <b>Dictionary</b>, and inside it one field per room: the room key from the list above → that room's <i>Current Temperature</i>.</li></ul></li><li>Never include the ACs' own Current Temperature.</li><li>Test by tapping <b>Sensor poll</b>: within about 15 seconds the AC tiles show the room temperatures, and the log shows the first push after each restart (tick <i>Log every temperature push</i> to see every one) or a warning that says what is wrong.</li></ol>",
           "condition": {
             "functionBody": "return model.compensation && model.compensation.enabled === true;"
           }
