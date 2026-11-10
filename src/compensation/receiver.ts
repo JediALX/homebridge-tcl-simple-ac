@@ -15,6 +15,7 @@
  * receiver to the per-room interface).
  */
 import http from 'node:http';
+import os from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
 
 import type { CompensationLog, RoomTemperatureSource, TemperatureReading } from './setpointCompensation';
@@ -59,7 +60,11 @@ export class HomeKitTemperatureReceiver {
       });
       server.listen(this.opts.port, this.opts.bindHost, () => {
         listening = true;
-        this.log.info(`temperature receiver listening on ${this.opts.bindHost ?? 'all interfaces'}:${this.port()}`);
+        const urls = this.shortcutUrls();
+        this.log.info(
+          `temperature receiver ready. Shortcut URL: ${urls.join(' or ')}` +
+          (urls.length > 1 ? ' (use the address on your home network)' : ''),
+        );
         resolve(true);
       });
       this.server = server;
@@ -86,6 +91,25 @@ export class HomeKitTemperatureReceiver {
 
   reading(room: string): TemperatureReading | undefined {
     return this.readings.get(room);
+  }
+
+  /**
+   * The URL(s) to put in the shortcut's "Get Contents of URL" action: the bind
+   * address if one is set, otherwise every external IPv4 address of this host
+   * (a NAS or Docker host may list several; the LAN one is the right one).
+   */
+  shortcutUrls(): string[] {
+    const port = this.port() ?? this.opts.port;
+    const hosts = this.opts.bindHost
+      ? [this.opts.bindHost]
+      : Object.values(os.networkInterfaces())
+        .flat()
+        .filter((a) => a !== undefined && a.family === 'IPv4' && !a.internal)
+        .map((a) => a!.address);
+    if (hosts.length === 0) {
+      hosts.push('<this machine\'s IP>');
+    }
+    return hosts.map((host) => `http://${host.includes(':') ? `[${host}]` : host}:${port}/temperatures`);
   }
 
   /** For monitoring: when the Home automation last delivered anything usable. */

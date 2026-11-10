@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import os from 'node:os';
 import { after, before, describe, it } from 'node:test';
 
 import { FakeLog } from '../testing/harness';
@@ -79,6 +80,26 @@ describe('HomeKitTemperatureReceiver', () => {
     const res = await post(big).catch(() => undefined);
     assert.ok(res === undefined || res.status !== 204);
     assert.equal(receiver.reading('living')?.celsius, 22);
+  });
+
+  it('logs the exact URL to put in the shortcut', () => {
+    assert.deepEqual(log.at('info'), [`temperature receiver ready. Shortcut URL: ${url}`]);
+  });
+
+  it('lists every external IPv4 address when listening on all interfaces', (t) => {
+    t.mock.method(os, 'networkInterfaces', () => ({
+      lo0: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+      eth0: [
+        { address: '192.168.1.20', family: 'IPv4', internal: false },
+        { address: 'fe80::1', family: 'IPv6', internal: false },
+      ],
+      docker0: [{ address: '172.17.0.1', family: 'IPv4', internal: false }],
+    }));
+    const anyHost = new HomeKitTemperatureReceiver({ port: 18581, token: TOKEN, rooms: [] }, new FakeLog());
+    assert.deepEqual(anyHost.shortcutUrls(), [
+      'http://192.168.1.20:18581/temperatures',
+      'http://172.17.0.1:18581/temperatures',
+    ]);
   });
 
   it('logs instead of throwing when the port is already in use', async () => {
