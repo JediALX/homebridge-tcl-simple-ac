@@ -72,6 +72,91 @@
         "title": "AWS IoT endpoint override",
         "type": "string",
         "description": "Normally auto-discovered. Only set if shadow reads fail."
+      },
+      "compensation": {
+        "title": "External sensor compensation",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "title": "Regulate on a room sensor from the Home app",
+            "type": "boolean",
+            "default": false,
+            "description": "Sends the AC a corrected target so the room, as measured by a Home app sensor, reaches your target. Adds a 'Sensor poll' switch and needs a Home automation: see the README."
+          },
+          "token": {
+            "title": "Token",
+            "type": "string",
+            "minLength": 16,
+            "description": "Shared secret your shortcut sends in the x-token header. At least 16 characters."
+          },
+          "rooms": {
+            "title": "Rooms",
+            "type": "array",
+            "description": "One entry per AC to compensate. Device IDs are printed in the log at startup.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "deviceId": {
+                  "title": "TCL device ID",
+                  "type": "string"
+                },
+                "roomKey": {
+                  "title": "Room key used in the shortcut",
+                  "type": "string",
+                  "placeholder": "living"
+                }
+              }
+            }
+          },
+          "port": {
+            "title": "Receiver port",
+            "type": "integer",
+            "default": 18581,
+            "minimum": 1024,
+            "maximum": 65535
+          },
+          "bindHost": {
+            "title": "Listen address",
+            "type": "string",
+            "placeholder": "all interfaces",
+            "description": "Optional. The LAN IP of the Homebridge host, to listen on that interface only."
+          },
+          "sensorPollIntervalSeconds": {
+            "title": "Sensor poll interval (seconds)",
+            "type": "integer",
+            "default": 180,
+            "minimum": 60,
+            "maximum": 3600
+          },
+          "staleAfterSeconds": {
+            "title": "Ignore readings older than (seconds)",
+            "type": "integer",
+            "default": 600,
+            "minimum": 120,
+            "maximum": 7200
+          },
+          "maxOffset": {
+            "title": "Largest correction (°C)",
+            "type": "number",
+            "default": 5,
+            "minimum": 0.5,
+            "maximum": 10
+          },
+          "smoothingMinutes": {
+            "title": "Smoothing (minutes)",
+            "type": "number",
+            "default": 10,
+            "minimum": 0,
+            "maximum": 120
+          },
+          "minChangeIntervalSeconds": {
+            "title": "Minimum time between automatic writes (seconds)",
+            "type": "integer",
+            "default": 180,
+            "minimum": 60,
+            "maximum": 3600
+          }
+        }
       }
     }
   },
@@ -79,6 +164,48 @@
     "username",
     "password",
     "pollInterval",
+    {
+      "type": "fieldset",
+      "title": "External sensor compensation (optional)",
+      "expandable": true,
+      "items": [
+        "compensation.enabled",
+        {
+          "key": "compensation.token",
+          "condition": {
+            "functionBody": "return model.compensation && model.compensation.enabled === true;"
+          }
+        },
+        {
+          "key": "compensation.rooms",
+          "type": "array",
+          "condition": {
+            "functionBody": "return model.compensation && model.compensation.enabled === true;"
+          },
+          "items": [
+            "compensation.rooms[].deviceId",
+            "compensation.rooms[].roomKey"
+          ]
+        },
+        {
+          "type": "fieldset",
+          "title": "Receiver and tuning",
+          "expandable": true,
+          "condition": {
+            "functionBody": "return model.compensation && model.compensation.enabled === true;"
+          },
+          "items": [
+            "compensation.port",
+            "compensation.bindHost",
+            "compensation.sensorPollIntervalSeconds",
+            "compensation.staleAfterSeconds",
+            "compensation.maxOffset",
+            "compensation.smoothingMinutes",
+            "compensation.minChangeIntervalSeconds"
+          ]
+        }
+      ]
+    },
     "enableDehumidifier",
     {
       "type": "fieldset",

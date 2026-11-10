@@ -54,6 +54,7 @@ Or search for "TCL Simple AC" in the Homebridge UI. Then configure with your TCL
 | `enableDehumidifier` | `false` | Expose Dry mode as a separate Dehumidifier accessory per AC (see below) |
 | `devices` | all split ACs | Optional allowlist of TCL device IDs (printed in the log at startup) |
 | `minTemp` / `maxTemp` | `16` / `31` | Target temperature range (°C) |
+| `compensation` | off | Regulate on a room sensor from the Home app instead of the AC's own (see below) |
 | `loginUrl`, `cloudUrlsEndpoint`, `appId`, `iotEndpoint` | auto | Advanced endpoint overrides; normally never needed |
 
 ## Behavior notes
@@ -74,6 +75,77 @@ HomeKit has a native dehumidifier type, so with `"enableDehumidifier": true` eac
 - Turning the **Dehumidifier off** powers the unit down.
 
 Caveats: the **humidity percentage shown is a fixed, synthetic 50%** (TCL split ACs report no humidity), and while in Dry mode the firmware controls fan speed and ignores the temperature setpoint itself. Disable the option and restart Homebridge to remove the tiles again.
+
+## Optional: External sensor compensation
+
+The indoor unit regulates on its own sensor, which sits high up in the unit and often misreads the room, especially when heating: the target looks reached long before the room is warm. With compensation on, the plugin reads a real room sensor and nudges the target it sends the AC so that the **room** ends up at your target:
+
+```
+sent to the AC = your target + (AC's own reading − room sensor reading)
+```
+
+The Home app keeps showing **your** target, and **Current Temperature shows the room sensor**. The AC keeps modulating its inverter as usual; nothing switches it on and off.
+
+- Works in **Heat** and **Cool**. In Auto, Dry and Fan-only, and while a TCL preset that owns the setpoint is on (AI Eco, Sleep, 8 °C heating), the plugin leaves the target alone; when the AC leaves Heat/Cool it puts your plain target back.
+- A target changed in the TCL app or with the IR remote is adopted as your new target.
+- If room readings stop arriving, the plugin falls back to your plain target, so the AC behaves as it would without this feature.
+- The correction is smoothed (about 10 minutes), capped (±5 °C by default) and written at most every 3 minutes, plus immediately when you change the target in the Home app.
+
+### How the room temperature gets in
+
+A Homebridge plugin cannot read other HomeKit accessories, so Apple Home delivers the readings: **any temperature sensor in the Home app works** (Hue, HomePod, Aqara, Eve…). The plugin adds one extra accessory, a **"Sensor poll"** switch, and turns it on briefly every 3 minutes. A Home automation reacts to that by reading your sensors and sending them to the plugin over your local network.
+
+1. **Configure** (Homebridge UI → plugin settings → *External sensor compensation*):
+
+   ```json
+   "compensation": {
+     "enabled": true,
+     "token": "a-long-random-string-of-your-choice",
+     "rooms": [
+       { "deviceId": "DYQmFxFAAAE", "roomKey": "living" },
+       { "deviceId": "DYQmFxFBBBB", "roomKey": "bedroom" }
+     ]
+   }
+   ```
+
+   Device IDs are printed in the Homebridge log at startup. Room keys are names you choose; lowercase ASCII (`living`, `bedroom`) avoids typos in the shortcut. Only mapped ACs are compensated.
+
+2. **Network.** The plugin listens on port `18581` (configurable) on the machine running Homebridge. If Homebridge runs in Docker, use host networking or map the port. Allow the port in your NAS/computer firewall if one is on, and keep it on your LAN — never forward it from the internet.
+
+3. **Home app.** Put the new **Sensor poll** switch in a room you don't use and leave it out of favourites. Then create a **Home automation**:
+   - *When*: "An accessory is controlled" → **Sensor poll** → **turns on**. Choose **Convert to Shortcut**.
+   - Add one **Get the state of** → *Current Temperature* action per room sensor.
+   - Add **Get Contents of URL**: URL `http://<Homebridge IP>:18581/temperatures`, method **POST**, header `x-token` = your token, request body **JSON** with one field `readings` of type **Dictionary** holding one entry per room: the room key → the matching *Current Temperature* result.
+   - **Never include the ACs' own Current Temperature**: with compensation on it already shows the room sensor, which would feed back on itself.
+
+   Tapping the Sensor poll switch runs the automation once, which is handy while setting it up.
+
+| Option (`compensation.`) | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Turns the feature on. Without it, the plugin behaves exactly as without this section |
+| `token` | — | Shared secret the shortcut sends as `x-token` (at least 16 characters) |
+| `rooms` | — | `[{ "deviceId": …, "roomKey": … }]`, one entry per AC to compensate |
+| `port` / `bindHost` | `18581` / all interfaces | Where the plugin listens for the shortcut |
+| `sensorPollIntervalSeconds` | `180` | How often the Sensor poll switch fires the automation |
+| `staleAfterSeconds` | `600` | Room readings older than this are ignored (fall back to the plain target) |
+| `maxOffset` | `5` | Largest correction in °C |
+| `smoothingMinutes` | `10` | How gently the correction follows changes; `0` turns smoothing off |
+| `minChangeIntervalSeconds` | `180` | Minimum time between automatic target writes |
+
+To switch the feature off, set `enabled` to `false` (or remove the section) and restart. Each AC gets your plain target back the next time it is on, and the Sensor poll switch is removed, together with the automation that uses it.
+
+### Troubleshooting compensation
+
+- The log shows one line per write, e.g. `compensation: user=22 internal=23 external=19 -> sent 26`, and warns when no readings arrive, when they stop or resume, and when the shortcut sends a room key that isn't configured.
+- Test the receiver from any computer on your network (expect `HTTP 204`):
+
+  ```bash
+  curl -i -X POST http://<Homebridge IP>:18581/temperatures -H 'x-token: <your token>' -H 'content-type: application/json' -d '{"readings":{"living":"21,4 °C"}}'
+  ```
+
+  `404` means a wrong token or URL; `400` means no usable reading (an unknown room key or an unreadable value).
+- **Known risk:** some users report that "Get Contents of URL" fails when the automation runs on the home hub, although it works when run by hand. If manual runs work but scheduled ones never arrive, this is the first suspect. The plugin then simply uses your plain targets.
+- If heating sawtooths (the indoor fan slows near the target, its sensor reads high, the correction grows, the unit restarts…), increase `smoothingMinutes` or `minChangeIntervalSeconds`, or lower `maxOffset`.
 
 ## Limitations
 
