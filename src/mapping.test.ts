@@ -7,12 +7,14 @@ import {
   fromTargetHeaterCoolerState,
   HK,
   isDehumidifying,
+  isSetpointPresetActive,
   parseShadow,
   powerOnCommand,
   toActive,
   toCurrentDehumidifierState,
   toCurrentHeaterCoolerState,
   toDehumidifierActive,
+  toDeviceSnapshot,
   toRotationSpeed,
   toTargetHeaterCoolerState,
   WorkMode,
@@ -272,5 +274,36 @@ describe('fan speed mapping', () => {
   it('maps 100% to the highest gear', () => {
     assert.deepEqual(fromRotationSpeed(100, 'windSpeed'), { windSpeed: 6 });
     assert.deepEqual(fromRotationSpeed(100, 'windSpeed7Gear'), { windSpeed7Gear: 6, windSpeedAutoSwitch: 0 });
+  });
+});
+
+describe('compensation snapshot', () => {
+  it('maps heat and cool to regulation modes and the rest to none', () => {
+    const at = (workMode: number) => toDeviceSnapshot(parseShadow({ ...baseReported, workMode }), false).mode;
+    assert.equal(at(WorkMode.HEAT), 'heat');
+    assert.equal(at(WorkMode.COOL), 'cool');
+    assert.equal(at(WorkMode.AUTO), undefined);
+    assert.equal(at(WorkMode.DRY), undefined);
+    assert.equal(at(WorkMode.FAN), undefined);
+  });
+
+  it('carries power, temperatures and the raw mode', () => {
+    const snap = toDeviceSnapshot(parseShadow({ ...baseReported, currentTemperature: 23.5 }), true);
+    assert.deepEqual(snap, {
+      powerOn: true,
+      workMode: WorkMode.COOL,
+      mode: 'cool',
+      setpointOwnedByPreset: true,
+      internalTemperature: 23.5,
+      deviceTarget: 24,
+    });
+  });
+
+  it('treats AI Eco, Sleep and 8 °C heating as presets that own the setpoint', () => {
+    assert.equal(isSetpointPresetActive({ AIECOSwitch: 0, sleep: 0, eightAddHot: 0 }), false);
+    assert.equal(isSetpointPresetActive({}), false);
+    assert.equal(isSetpointPresetActive({ AIECOSwitch: 1 }), true);
+    assert.equal(isSetpointPresetActive({ sleep: 2 }), true);
+    assert.equal(isSetpointPresetActive({ eightAddHot: 1 }), true);
   });
 });

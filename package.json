@@ -31,7 +31,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "test": "node --import tsx --test src/*.test.ts src/tcl/*.test.ts",
+    "test": "node --import tsx --test src/*.test.ts src/tcl/*.test.ts src/compensation/*.test.ts",
     "probe": "tsx scripts/probe.ts",
     "prepack": "npm run build"
   },

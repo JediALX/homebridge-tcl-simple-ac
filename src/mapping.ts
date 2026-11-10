@@ -4,6 +4,8 @@
  * trivially unit-testable.
  */
 
+import type { DeviceSnapshot } from './compensation/setpointCompensation';
+
 /** HAP HeaterCooler characteristic values (kept local to stay dependency-free). */
 export const HK = {
   CurrentState: { INACTIVE: 0, IDLE: 1, HEATING: 2, COOLING: 3 },
@@ -239,4 +241,29 @@ export function fromRotationSpeed(percent: number, profile: FanSpeedProfile): Fa
 
 export function clampTemperature(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/**
+ * Shadow flags of TCL features that take over the setpoint, so compensation
+ * must leave the target alone while one is on. Field names are from the
+ * BreezeIN 2.0 probe dump (AI Eco, Sleep, 8 °C heating); what each does has
+ * not been verified on the device yet, and the dump had no Turbo field.
+ */
+export const SETPOINT_PRESET_FIELDS = ['AIECOSwitch', 'sleep', 'eightAddHot'] as const;
+
+export function isSetpointPresetActive(reported: Record<string, unknown>): boolean {
+  return SETPOINT_PRESET_FIELDS.some((field) => num(reported, field) !== 0);
+}
+
+/** The state compensation needs, taken from the state already polled. */
+export function toDeviceSnapshot(state: AcState, presetActive: boolean): DeviceSnapshot {
+  const mode = state.workMode === WorkMode.HEAT ? 'heat' : state.workMode === WorkMode.COOL ? 'cool' : undefined;
+  return {
+    powerOn: state.power,
+    workMode: state.workMode,
+    mode,
+    setpointOwnedByPreset: presetActive,
+    internalTemperature: state.currentTemperature,
+    deviceTarget: state.targetTemperature,
+  };
 }
