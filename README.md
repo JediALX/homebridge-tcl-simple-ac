@@ -115,7 +115,7 @@ A Homebridge plugin cannot read other HomeKit accessories, so Apple Home deliver
 3. **Home app.** Put the new **Sensor poll** switch in a room you don't use and leave it out of favourites. Then create a **Home automation**:
    - *When*: "An accessory is controlled" → **Sensor poll** → **turns on**. Choose **Convert to Shortcut**.
    - Add one **Get the state of** → *Current Temperature* action per room sensor.
-   - Add **Get Contents of URL**: URL `http://<Homebridge IP>:18581/temperatures` (the address you open the Homebridge UI with, on port 18581 instead of the UI's port; the exact URL is printed in the Homebridge log at startup), method **POST**, header `x-token` = your token, request body **JSON** with one field `readings` of type **Dictionary** holding one entry per room: the room key → the matching *Current Temperature* result.
+   - Add **Get Contents of URL**: URL `http://<Homebridge IP>:18581/temperatures` (the address you open the Homebridge UI with, on port 18581 instead of the UI's port; the Homebridge log prints the full action setup at startup), method **POST**, header `x-token` = your token, request body **JSON** with one field `readings` of type **Dictionary** holding one entry per room: the room key → the matching *Current Temperature* result.
    - **Never include the ACs' own Current Temperature**: with compensation on it already shows the room sensor, which would feed back on itself.
 
    Tapping the Sensor poll switch runs the automation once, which is handy while setting it up. The same steps are shown in the plugin settings once the feature is enabled.

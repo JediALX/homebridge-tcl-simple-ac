@@ -82,8 +82,15 @@ describe('HomeKitTemperatureReceiver', () => {
     assert.equal(receiver.reading('living')?.celsius, 22);
   });
 
-  it('logs the exact URL to put in the shortcut', () => {
-    assert.deepEqual(log.at('info'), [`temperature receiver ready. Shortcut URL: ${url}`]);
+  it('logs every field of the shortcut action, without the token', () => {
+    assert.deepEqual(log.at('info'), [
+      'temperature receiver ready. In the shortcut\'s "Get Contents of URL" action set:',
+      `  URL: ${url}`,
+      '  Method: POST',
+      '  Headers: x-token = the token from the plugin settings',
+      '  Request Body: JSON, field "readings" of type Dictionary = { "living": <Current Temperature>, "bedroom": <Current Temperature> }',
+    ]);
+    assert.ok(log.lines.every((l) => !l.msg.includes(TOKEN)), 'token never logged');
   });
 
   it('lists every external IPv4 address when listening on all interfaces', (t) => {

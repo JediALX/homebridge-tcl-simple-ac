@@ -60,11 +60,7 @@ export class HomeKitTemperatureReceiver {
       });
       server.listen(this.opts.port, this.opts.bindHost, () => {
         listening = true;
-        const urls = this.shortcutUrls();
-        this.log.info(
-          `temperature receiver ready. Shortcut URL: ${urls.join(' or ')}` +
-          (urls.length > 1 ? ' (use the address on your home network)' : ''),
-        );
+        this.shortcutSetup().forEach((line) => this.log.info(line));
         resolve(true);
       });
       this.server = server;
@@ -91,6 +87,23 @@ export class HomeKitTemperatureReceiver {
 
   reading(room: string): TemperatureReading | undefined {
     return this.readings.get(room);
+  }
+
+  /**
+   * Everything to enter in the shortcut's "Get Contents of URL" action. The
+   * URL ends at /temperatures; the token and readings go in other fields.
+   * The token itself is never logged.
+   */
+  shortcutSetup(): string[] {
+    const urls = this.shortcutUrls();
+    const example = this.opts.rooms.map((room) => `"${room}": <Current Temperature>`).join(', ');
+    return [
+      'temperature receiver ready. In the shortcut\'s "Get Contents of URL" action set:',
+      `  URL: ${urls.join(' or ')}${urls.length > 1 ? ' (use the address on your home network)' : ''}`,
+      '  Method: POST',
+      '  Headers: x-token = the token from the plugin settings',
+      `  Request Body: JSON, field "readings" of type Dictionary = { ${example} }`,
+    ];
   }
 
   /**
