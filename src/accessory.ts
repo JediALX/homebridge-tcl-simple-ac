@@ -7,10 +7,12 @@ import {
   fromRotationSpeed,
   fromTargetHeaterCoolerState,
   HK,
+  isSetpointPresetActive,
   parseShadow,
   powerOnCommand,
   toActive,
   toCurrentHeaterCoolerState,
+  toDeviceSnapshot,
   toRotationSpeed,
   toSwingMode,
   toTargetHeaterCoolerState,
@@ -19,6 +21,8 @@ import {
 import { TclSimpleAcPlatform } from './platform';
 import { TclThing } from './tcl/api';
 import type { TclDehumidifierAccessory } from './dehumidifier';
+import { PassThroughPolicy, TargetTemperaturePolicy } from './compensation/targetPolicy';
+import type { ClimateCommandPort } from './compensation/setpointCompensation';
 
 /** How long after a command we trust our optimistic state over polled state. */
 const POLL_SUPPRESS_MS = 5_000;
@@ -39,6 +43,7 @@ export class TclAcAccessory {
   private pollFailures = 0;
   private fanPropsConfigured = false;
   private satellite?: TclDehumidifierAccessory;
+  private policy: TargetTemperaturePolicy = new PassThroughPolicy();
 
   constructor(
     private readonly platform: TclSimpleAcPlatform,
@@ -71,7 +76,7 @@ export class TclAcAccessory {
       .onSet((value) => this.setTargetState(value));
 
     this.service.getCharacteristic(C.CurrentTemperature)
-      .onGet(() => this.getValue((s) => s.currentTemperature));
+      .onGet(() => this.getValue((s) => this.policy.displayedCurrentTemperature(s.currentTemperature)));
 
     const tempProps = {
       minValue: platform.minTemp,
@@ -80,11 +85,11 @@ export class TclAcAccessory {
     };
     this.service.getCharacteristic(C.CoolingThresholdTemperature)
       .setProps(tempProps)
-      .onGet(() => this.getValue((s) => this.clampTemp(s.targetTemperature)))
+      .onGet(() => this.getValue((s) => this.displayedTarget(s)))
       .onSet((value) => this.setTargetTemperature(value));
     this.service.getCharacteristic(C.HeatingThresholdTemperature)
       .setProps(tempProps)
-      .onGet(() => this.getValue((s) => this.clampTemp(s.targetTemperature)))
+      .onGet(() => this.getValue((s) => this.displayedTarget(s)))
       .onSet((value) => this.setTargetTemperature(value));
 
     this.service.getCharacteristic(C.RotationSpeed)
@@ -106,8 +111,31 @@ export class TclAcAccessory {
     return this.platform.dehumidifierEnabled;
   }
 
+  /** Install external-sensor compensation (or its clean-up); the default is pass-through. */
+  setPolicy(policy: TargetTemperaturePolicy): void {
+    this.policy = policy;
+  }
+
+  /** Target writes for compensation, through the same debounced publish as HomeKit commands. */
+  commandPort(): ClimateCommandPort {
+    return {
+      setTargetTemperature: async (celsius: number) => {
+        const published = await this.queueDesired({ targetTemperature: celsius }, (s) => {
+          s.targetTemperature = celsius;
+        });
+        if (!published) {
+          throw new Error('target temperature publish failed');
+        }
+      },
+    };
+  }
+
   private clampTemp(value: number): number {
     return clampTemperature(value, this.platform.minTemp, this.platform.maxTemp);
+  }
+
+  private displayedTarget(state: AcState): number {
+    return this.clampTemp(this.policy.displayedTarget(state.targetTemperature));
   }
 
   /** Last known state, or null before the first successful poll. */
@@ -172,6 +200,10 @@ export class TclAcAccessory {
 
   private setTargetTemperature(value: CharacteristicValue): void {
     const target = this.clampTemp(value as number);
+    if (this.policy.takeUserTarget(target)) {
+      this.pushState();
+      return;
+    }
     this.queueDesired({ targetTemperature: target }, (s) => {
       s.targetTemperature = target;
     });
@@ -277,6 +309,7 @@ export class TclAcAccessory {
         this.lastTargetState = target;
       }
       this.pushState();
+      await this.policy.onDeviceState(toDeviceSnapshot(this.state, isSetpointPresetActive(reported)));
     } catch (e) {
       this.pollFailures++;
       const level = this.pollFailures === 1 || this.pollFailures === MAX_POLL_FAILURES ? 'warn' : 'debug';
@@ -298,7 +331,7 @@ export class TclAcAccessory {
     this.fanPropsConfigured = true;
   }
 
-  private pushState(): void {
+  pushState(): void {
     const s = this.state;
     if (!s) {
       return;
@@ -308,9 +341,9 @@ export class TclAcAccessory {
     this.service.updateCharacteristic(C.CurrentHeaterCoolerState, toCurrentHeaterCoolerState(s, this.dryAsOff));
     const target = toTargetHeaterCoolerState(s);
     this.service.updateCharacteristic(C.TargetHeaterCoolerState, target ?? this.lastTargetState);
-    this.service.updateCharacteristic(C.CurrentTemperature, s.currentTemperature);
-    this.service.updateCharacteristic(C.CoolingThresholdTemperature, this.clampTemp(s.targetTemperature));
-    this.service.updateCharacteristic(C.HeatingThresholdTemperature, this.clampTemp(s.targetTemperature));
+    this.service.updateCharacteristic(C.CurrentTemperature, this.policy.displayedCurrentTemperature(s.currentTemperature));
+    this.service.updateCharacteristic(C.CoolingThresholdTemperature, this.displayedTarget(s));
+    this.service.updateCharacteristic(C.HeatingThresholdTemperature, this.displayedTarget(s));
     this.service.updateCharacteristic(C.RotationSpeed, toRotationSpeed(s));
     this.service.updateCharacteristic(C.SwingMode, toSwingMode(s));
     this.satellite?.pushState(s);

@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 
+import type { Characteristic as HapCharacteristic, WithUUID } from '@homebridge/hap-nodejs';
+
 import { TclAcAccessory } from './accessory';
 import {
   BREEZEIN_REPORTED,
@@ -17,13 +19,15 @@ import {
   THING,
 } from './testing/harness';
 
+type CharType = WithUUID<new () => HapCharacteristic>;
+
 function setup(reported: Record<string, unknown> = BREEZEIN_REPORTED) {
   const fake = fakePlatform(reported);
   const accessory = new FakeAccessory(THING.nickName, 'uuid-1');
   const handler = new TclAcAccessory(fake.platform, accessory as never, THING);
   const service = heaterCooler(accessory);
-  const value = (c: typeof C.Active) => service.getCharacteristic(c).value;
-  const set = async (c: typeof C.Active, v: number) => {
+  const value = (c: CharType) => service.getCharacteristic(c).value;
+  const set = async (c: CharType, v: number) => {
     service.getCharacteristic(c).setValue(v);
     await settle();
   };

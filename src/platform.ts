@@ -10,7 +10,13 @@ import {
 import path from 'node:path';
 
 import { TclAcAccessory } from './accessory';
+import { parseCompensationConfig, ParsedCompensation, SENSOR_POLL_PULSE_MS } from './compensation/config';
+import { HomeKitTemperatureReceiver, RoomSource } from './compensation/receiver';
+import { PushMonitor, SensorPollTrigger } from './compensation/sensorPoll';
+import { CompensatedThermostat, CompensationLog, CompensationState } from './compensation/setpointCompensation';
+import { CompensatingPolicy, ReleasingPolicy } from './compensation/targetPolicy';
 import { TclDehumidifierAccessory } from './dehumidifier';
+import { SensorPollSwitch } from './sensorPollSwitch';
 import {
   DEFAULT_APP_ID,
   DEFAULT_CLOUD_URLS_ENDPOINT,
@@ -38,6 +44,7 @@ export interface TclPlatformConfig extends PlatformConfig {
   cloudUrlsEndpoint?: string;
   appId?: string;
   iotEndpoint?: string;
+  compensation?: unknown;
 }
 
 export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
@@ -57,6 +64,11 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
   private readonly handlers = new Map<string, TclAcAccessory>();
   private pollTimer?: NodeJS.Timeout;
   private discoveryBackoffMs = 60_000;
+  private compensation: ParsedCompensation = { status: 'off' };
+  private receiver?: HomeKitTemperatureReceiver;
+  private sensorSwitch?: SensorPollSwitch;
+  private sensorTrigger?: SensorPollTrigger;
+  private pushMonitorTimer?: NodeJS.Timeout;
 
   constructor(
     public readonly log: Logging,
@@ -91,13 +103,33 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
     });
     this.shadow = new ShadowClient(this.session, this.config.iotEndpoint, this.log);
 
+    this.compensation = parseCompensationConfig(
+      this.config.compensation,
+      { minSetpoint: this.minTemp, maxSetpoint: this.maxTemp },
+      this.log,
+    );
+    if (this.compensation.status === 'on') {
+      const { port, bindHost, token, rooms } = this.compensation;
+      this.receiver = new HomeKitTemperatureReceiver(
+        { port, bindHost, token, rooms: [...new Set(rooms.values())] },
+        this.compensationLog(),
+      );
+    }
+
     this.api.on('didFinishLaunching', () => {
+      if (this.receiver) {
+        this.runSafely(this.receiver.start(), 'temperature receiver start');
+      }
       this.runSafely(this.discoverDevices(), 'device discovery');
     });
     this.api.on('shutdown', () => {
       if (this.pollTimer) {
         clearInterval(this.pollTimer);
       }
+      this.sensorTrigger?.stop();
+      this.sensorSwitch?.stop();
+      clearInterval(this.pushMonitorTimer);
+      this.runSafely(this.receiver?.stop() ?? Promise.resolve(), 'temperature receiver stop');
     });
   }
 
@@ -155,6 +187,7 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
       }
       accessory.context.deviceId = thing.deviceId;
       const handler = new TclAcAccessory(this, accessory, thing);
+      this.applyCompensation(thing, accessory, handler);
       this.handlers.set(thing.deviceId, handler);
 
       if (this.dehumidifierEnabled) {
@@ -172,6 +205,21 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
       }
     }
 
+    // Kept while compensation is configured, even if invalid, because HomeKit
+    // drops automations whose accessory disappears. When compensation is off
+    // it is not in seenUuids, so the stale clean-up below removes it.
+    if (this.compensation.status !== 'off') {
+      const sensorUuid = this.api.hap.uuid.generate(`${PLUGIN_NAME}:sensor-poll`);
+      seenUuids.add(sensorUuid);
+      let sensorAccessory = this.cachedAccessories.find((a) => a.UUID === sensorUuid);
+      if (!sensorAccessory) {
+        sensorAccessory = new this.api.platformAccessory('Sensor poll', sensorUuid);
+        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [sensorAccessory]);
+        this.log.info('Registered new accessory: Sensor poll');
+      }
+      this.startSensorPolling(sensorAccessory, acs);
+    }
+
     const stale = this.cachedAccessories.filter((a) => !seenUuids.has(a.UUID));
     if (stale.length > 0) {
       this.log.info('Removing %d stale accessory(ies)', stale.length);
@@ -183,6 +231,72 @@ export class TclSimpleAcPlatform implements DynamicPlatformPlugin {
       () => this.runSafely(this.pollAll(), 'poll'),
       this.pollIntervalMs,
     );
+  }
+
+  /**
+   * Compensation for ACs mapped to a room; a one-off restore for ACs that
+   * still carry state from when compensation was on; nothing otherwise.
+   */
+  private applyCompensation(thing: TclThing, accessory: PlatformAccessory, handler: TclAcAccessory): void {
+    const stored = accessory.context.compensation as CompensationState | undefined;
+    const persist = (state?: CompensationState) => {
+      if (state) {
+        accessory.context.compensation = state;
+      } else {
+        delete accessory.context.compensation;
+      }
+      this.api.updatePlatformAccessories([accessory]);
+    };
+    const log = this.compensationLog(thing.nickName);
+    const roomKey = this.compensation.status === 'on' ? this.compensation.rooms.get(thing.deviceId) : undefined;
+
+    if (this.compensation.status === 'on' && roomKey && this.receiver) {
+      const thermostat = new CompensatedThermostat({
+        device: handler.commandPort(),
+        source: new RoomSource(this.receiver, roomKey),
+        settings: this.compensation.settings,
+        state: stored ?? {},
+        persist,
+        log,
+        onDisplayChange: () => handler.pushState(),
+      });
+      handler.setPolicy(new CompensatingPolicy(
+        thermostat,
+        (work) => this.runSafely(work, `compensation for ${thing.nickName}`),
+      ));
+      this.log.info('[%s] external-sensor compensation on (room "%s")', thing.nickName, roomKey);
+    } else if (stored) {
+      handler.setPolicy(new ReleasingPolicy(stored, handler.commandPort(), log, () => persist(undefined)));
+      this.log.info('[%s] compensation is off for this AC; its plain target will be restored', thing.nickName);
+    }
+  }
+
+  private startSensorPolling(sensorAccessory: PlatformAccessory, acs: TclThing[]): void {
+    this.sensorSwitch = new SensorPollSwitch(this, sensorAccessory);
+    if (this.compensation.status !== 'on' || !this.receiver) {
+      return;
+    }
+    const { rooms, sensorPollIntervalMs } = this.compensation;
+    for (const deviceId of rooms.keys()) {
+      if (!acs.some((ac) => ac.deviceId === deviceId)) {
+        this.log.warn('Compensation: device %s in "rooms" is not one of the exposed ACs', deviceId);
+      }
+    }
+    this.sensorTrigger = new SensorPollTrigger(this.sensorSwitch, sensorPollIntervalMs, SENSOR_POLL_PULSE_MS);
+    this.sensorTrigger.start();
+    const monitor = new PushMonitor(
+      this.receiver, [...new Set(rooms.values())], sensorPollIntervalMs, this.compensationLog(),
+    );
+    this.pushMonitorTimer = setInterval(() => monitor.check(), sensorPollIntervalMs);
+  }
+
+  private compensationLog(prefix?: string): CompensationLog {
+    const p = prefix ? `[${prefix}] ` : '';
+    return {
+      info: (message) => this.log.info('%s', p + message),
+      warn: (message) => this.log.warn('%s', p + message),
+      debug: (message) => this.log.debug('%s', p + message),
+    };
   }
 
   private async pollAll(): Promise<void> {

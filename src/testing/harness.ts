@@ -4,13 +4,16 @@
  * characteristic values, props and handlers behave exactly as in production.
  * Excluded from the build (see tsconfig.json).
  */
+import { EventEmitter } from 'node:events';
+import os from 'node:os';
+
 import { Characteristic, HAPStatus, HapStatusError, Service, uuid } from '@homebridge/hap-nodejs';
 
 import type { TclAcAccessory } from '../accessory';
 import type { TclSimpleAcPlatform } from '../platform';
 import type { TclThing } from '../tcl/api';
 
-export { Characteristic, Service };
+export { Characteristic, Service, uuid };
 
 type ServiceType = { UUID: string; new (displayName?: string, subtype?: string): Service };
 
@@ -34,6 +37,8 @@ export class FakeAccessory {
 export class FakeShadow {
   reported: Record<string, unknown>;
   readonly published: Record<string, unknown>[] = [];
+  /** Every publish with the device it went to. */
+  readonly writes: { deviceId: string; desired: Record<string, unknown> }[] = [];
   failPublishes = 0;
   getShadowCalls = 0;
 
@@ -46,12 +51,13 @@ export class FakeShadow {
     return { state: { reported: { ...this.reported } } };
   }
 
-  async setDesiredState(_deviceId: string, desired: Record<string, unknown>): Promise<void> {
+  async setDesiredState(deviceId: string, desired: Record<string, unknown>): Promise<void> {
     if (this.failPublishes > 0) {
       this.failPublishes--;
       throw new Error('simulated publish failure');
     }
     this.published.push({ ...desired });
+    this.writes.push({ deviceId, desired: { ...desired } });
   }
 }
 
@@ -152,6 +158,32 @@ export function heaterCooler(accessory: FakeAccessory): Service {
 /** Let pending promise chains (fake cloud calls) settle. */
 export function settle(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+/** Stand-in for Homebridge's API: records accessory (un)registrations and cache updates. */
+export class FakeApi extends EventEmitter {
+  readonly hap = { Service, Characteristic, uuid, HapStatusError, HAPStatus };
+  readonly platformAccessory = FakeAccessory;
+  readonly user = { storagePath: () => os.tmpdir() };
+  readonly registered: FakeAccessory[] = [];
+  readonly unregistered: FakeAccessory[] = [];
+  updates = 0;
+
+  registerPlatformAccessories(_plugin: string, _platform: string, accessories: FakeAccessory[]): void {
+    this.registered.push(...accessories);
+  }
+
+  unregisterPlatformAccessories(_plugin: string, _platform: string, accessories: FakeAccessory[]): void {
+    this.unregistered.push(...accessories);
+  }
+
+  updatePlatformAccessories(): void {
+    this.updates++;
+  }
+}
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export type { TclAcAccessory };
